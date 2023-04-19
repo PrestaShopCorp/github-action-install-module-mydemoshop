@@ -1,0 +1,53 @@
+name: 'Install module'
+description: 'Install Prestashop module on MyDemoShop'
+inputs:
+  environment:
+    description: MyDemoShop Environment
+    required: true
+  shop_name:
+    description: MyDemoShop shop name
+    required: true
+  module_name:
+    description: Module name to install
+    required: true
+  module_zip_url:
+    description: Module zip url to install
+    required: true
+outputs:
+  status:
+    description: "Module installation status"
+    value: ${{ steps.install_module.outputs.status }}
+  message:
+    description: "Error message if installation failed"
+    value: ${{ steps.install_module.outputs.message }}
+runs:
+  using: "composite"
+  steps:
+    - name: OAuth token
+      id: get_oauth_token
+      shell: bash
+      run: |
+        access_token=$( \
+        curl --header "Content-Type: application/x-www-form-urlencoded" \
+              --data-urlencode "client_secret=${{ env.GOOGLE_APIS_CLIENT_SECRET }}" \
+              --data-urlencode "client_id=${{ env.GOOGLE_APIS_CLIENT_ID }}" \
+              --data-urlencode "grant_type=refresh_token" \
+              --data-urlencode "refresh_token=${{ env.GOOGLE_APIS_REFRESH_TOKEN }}" \
+              --location "https://oauth2.googleapis.com/token" | \
+        jq -r '.access_token')
+        echo """access_token=$access_token""" >> $GITHUB_OUTPUT
+
+    - name: Install module
+      id: install_module
+      shell: bash
+      run: |
+        echo '{"target_environment":"${{ inputs.environment }}","shopname":"${{ inputs.shop_name }}","module_name":"${{ inputs.module_name }}","url":"${{ inputs.module_zip_url }}","http_headers":{"Accept": "application/vnd.github+json","Authorization":"Bearer ${{ github.token }}","X-GitHub-Api-Version":"2022-11-28"}}' > req.json
+        install_response=$(curl --header 'Authorization: Bearer ${{ steps.get_oauth_token.outputs.access_token  }}' --header 'Content-Type: application/json' --data @req.json --location '${{ env.INSTALL_MODULE_MYDEMOSHOP_URL }}')
+        status=$(echo $install_response | jq -r '.status')
+        message=$(echo $install_response | jq -r '.message')
+        echo """status=$status""" >> $GITHUB_OUTPUT
+        echo """message=$message""" >> $GITHUB_OUTPUT
+        echo $message
+        if [[ "$status" == "false" ]]; then
+          exit 1
+        fi
